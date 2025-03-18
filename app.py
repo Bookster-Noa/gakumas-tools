@@ -1,164 +1,275 @@
-# app.py (最小のStreamlitサンプル)
-
 import streamlit as st
+from functools import lru_cache
+
+st.set_page_config(page_title="SP発生確率計算ツール", layout="centered")
+
+# --- GitHub公開時にメニューやフッターなど不要な情報を非表示にする ---
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# --------------------------------------------------------------
 
 def main():
-    st.title("SPレッスン確率計算アプリ (2極編成)")
+    st.write("## SP発生確率計算ツール")
+    st.write("""
+NIA編における全8週のレッスンを数理的にシミュレーションし、最適な戦略の策定をサポートします。  
+ご自身のアイドルと相談しながら条件を設定してください。  
+※サポカ編成提案ツールも開発中です
+""")
+    
+    st.markdown("---")
+    # 1) SP発生率入力
+    st.write("### 各種SPレッスン発生率増加値")
+    st.write("""
+育成中にP手帳の編成から確認できます。  
+基礎値10%にユーザーが入力した値を加算してSP発生率とします。  
+(0〜100、0.5刻み)
+""")
+    vocal_up  = st.number_input("ボーカル(％)", 0.0, 100.0, 0.0, 0.5, format="%.1f")
+    dance_up  = st.number_input("ダンス(％)",   0.0, 100.0, 0.0, 0.5, format="%.1f")
+    visual_up = st.number_input("ビジュアル(％)", 0.0, 100.0, 0.0, 0.5, format="%.1f")
 
-    st.header("【1】Xレッスン/Yレッスンを選択")
-    st.write("ボーカル・ダンス・ビジュアルの3種類から、使う2種類を選んでください。")
+    pV = min(0.10 + vocal_up/100.0, 1.0)
+    pD = min(0.10 + dance_up/100.0, 1.0)
+    pB = min(0.10 + visual_up/100.0, 1.0)
+    
+    st.write(f"最終SP発生率: ボーカル {pV*100:.1f}%, ダンス {pD*100:.1f}%, ビジュアル {pB*100:.1f}%")
+    
+    st.markdown("---")
+    # 2) 最低条件
+    st.write("### 最低条件")
+    st.write("各種最低でも何回SPを踏みたいか(合計0〜8回)")
+    min_v = st.number_input("ボーカル最低回数", 0, 8, 0)
+    min_d = st.number_input("ダンス最低回数",   0, 8, 0)
+    min_b = st.number_input("ビジュアル最低回数", 0, 8, 0)
+    sum_min = min_v + min_d + min_b
+    st.write(f"現在の最低条件合計: {sum_min} 回")
+    if sum_min > 8:
+        st.error("最低条件の合計が8回を超えています。")
 
-    lessons = ["ボーカル", "ダンス", "ビジュアル"]
-    chosen = st.multiselect(
-        "2つ選択 (重複不可)",
-        lessons,
-        default=["ダンス", "ビジュアル"]  # デフォルト例
-    )
-    if len(chosen) != 2:
-        st.error("※2つ選んでください。")
-        return
+    st.markdown("---")
+    # 3) 理想条件
+    st.write("### 理想条件")
+    st.write("各種理想で何回SPを踏みたいか (合計8回)")
+    ideal_v = st.number_input("ボーカル理想回数", 0, 8, 0)
+    ideal_d = st.number_input("ダンス理想回数",   0, 8, 0)
+    ideal_b = st.number_input("ビジュアル理想回数", 0, 8, 0)
+    sum_ideal = ideal_v + ideal_d + ideal_b
+    if sum_ideal not in (0, 8):
+        st.error("理想条件の合計は8回、もしくは未設定(0)にしてください。")
 
-    x_label, y_label = chosen[0], chosen[1]
-
-    st.write("---")
-
-    st.header("【2】SP率増加値を入力 (基礎10%)")
-
-    # XレッスンSPアップ率 (整数％)
-    x_up_percent = st.number_input(
-        f"{x_label} SPレッスン発生率増加(％)",
-        min_value=0, max_value=100, value=50, step=1
-    )
-    # 内部計算 (0.10 + x_up_percent/100)
-    pX = min(0.10 + x_up_percent / 100.0, 1.0)
-
-    # YレッスンSPアップ率 (整数％)
-    y_up_percent = st.number_input(
-        f"{y_label} SPレッスン発生率増加(％)",
-        min_value=0, max_value=100, value=50, step=1
-    )
-    pY = min(0.10 + y_up_percent / 100.0, 1.0)
-
-    st.write("---")
-
-    st.header(f"【3】{x_label}SPの目標回数 (全8ターン)")
-    target_x = st.slider(
-        f"{x_label} を最終的に何回SPにしたい？",
-        0, 8, 4
-    )
-
-    st.write("---")
-
-    # -----------------------------
-    # ここで pX_only, pY_only, pBoth, pNone を定義（どのボタンでも使えるように）
-    # -----------------------------
-    pX_only = pX * (1 - pY)
-    pY_only = (1 - pX) * pY
-    pBoth   = pX * pY
-    pNone   = (1 - pX) * (1 - pY)
-
-    # 1ターンあたり「少なくともどちらかがSP」 => pX + pY - pX*pY
-    pAtLeastOne = pX + pY - pX*pY
-    # 8ターン連続で「少なくとも片方がSP」 => (pAtLeastOne)^8
-    prob_both_sp_8 = (pAtLeastOne) ** 8
-
-    # DP用の関数を定義
-    TOTAL_TURNS = 8
-
-    memo_main = {}
-    def success_probability(i, x_count):
-        """ 
-        i: 何ターン目(0〜8)
-        x_count: ここまでXレッスンSPを選んだ回数
-        戻り値:
-          8ターン連続SP & Xが最終的に target_x 回になる最大確率
-        """
-        if i == TOTAL_TURNS:
-            return 1.0 if (x_count == target_x) else 0.0
-        if (i, x_count) in memo_main:
-            return memo_main[(i, x_count)]
-
-        # 1) XのみSP
-        prob_xonly = success_probability(i+1, x_count+1)
-        # 2) YのみSP
-        prob_yonly = success_probability(i+1, x_count)
-        # 3) 両方SP => 好きに選べる(成功確率が高い方)
-        prob_choose_x = success_probability(i+1, x_count+1)
-        prob_choose_y = success_probability(i+1, x_count)
-        best_both = max(prob_choose_x, prob_choose_y)
-        # 4) どちらもSPでない => 0
-        prob_none = 0.0
-
-        ans = (
-            pX_only * prob_xonly +
-            pY_only * prob_yonly +
-            pBoth   * best_both +
-            pNone   * prob_none
-        )
-        memo_main[(i, x_count)] = ans
-        return ans
-
-    # 「計算する」ボタン
+    st.markdown("---")
     if st.button("計算する"):
-        final_prob = success_probability(0, 0)
+        if sum_min > 8:
+            st.error("最低条件の合計が8回を超えています。修正してください。")
+        elif sum_min == 0 and sum_ideal == 0:
+            st.error("最低条件 または 理想条件のどちらかは設定してください。")
+        else:
+            dp_clear_cache()
+            # dp(0,0,0,0) の戻り値 => (minC, minAndAll, idealC, allSP)
+            res = dp(0, 0, 0, 0, pV, pD, pB, min_v, min_d, min_b,
+                     ideal_v, ideal_d, ideal_b, sum_ideal)
+            
+            st.write("#### 計算結果")
+            st.write(f"- 最低条件(Vo≥{min_v}, Da≥{min_d}, Vi≥{min_b})達成確率: **{res[0]*100:.3f}%**")
+            st.write(f"- 最低条件達成＋全8回SPの確率: **{res[1]*100:.3f}%**")
+            if sum_ideal == 8:
+                st.write(f"- 理想条件(Vo={ideal_v}, Da={ideal_d}, Vi={ideal_b})達成確率: **{res[2]*100:.3f}%**")
+            else:
+                st.write("- 理想条件: 未設定")
+            st.write(f"- 全8回SPの確率: **{res[3]*100:.3f}%**")
 
-        st.subheader("【計算結果】")
-
-        x_rate_percent = int(pX * 100)
-        y_rate_percent = int(pY * 100)
-        st.write(f"{x_label} SP率: {x_rate_percent}%,   {y_label} SP率: {y_rate_percent}%")
-
-        # 8ターン連続で少なくとも片方SPになる確率
-        st.write(f"・8ターン全部で少なくともどちらかSPになる確率: **{prob_both_sp_8*100:.3f}%**")
-
-        st.write(f"・{x_label}SPを {target_x}回、{y_label}SPを {8 - target_x}回踏みたい場合:")
-        st.write(f"  成功確率: **{final_prob*100:.3f}%**")
-
-    st.write("---")
-
-    # (C) 途中経過用の2つ目のDP
-    st.subheader(f"【4】(任意) 次ターン両方SPの場合 {x_label} or {y_label} どちらを踏むべきか")
-
-    i_now = st.number_input("経過ターン数 (0〜8)", min_value=0, max_value=8, value=0)
-    x_now = st.number_input(f"現在 {x_label} SPを踏んだ回数(0〜8)", min_value=0, max_value=8, value=0)
-
-    memo_sub = {}
-    def success_prob_sub(i, x_count):
-        if i == TOTAL_TURNS:
-            return 1.0 if (x_count == target_x) else 0.0
-        if (i, x_count) in memo_sub:
-            return memo_sub[(i, x_count)]
-
-        pr_xonly = success_prob_sub(i+1, x_count+1)
-        pr_yonly = success_prob_sub(i+1, x_count)
-        pr_choose_x = success_prob_sub(i+1, x_count+1)
-        pr_choose_y = success_prob_sub(i+1, x_count)
-        best_both = max(pr_choose_x, pr_choose_y)
-        pr_none = 0.0
-
-        ans2 = (pX_only * pr_xonly
-                + pY_only * pr_yonly
-                + pBoth   * best_both
-                + pNone   * pr_none)
-        memo_sub[(i, x_count)] = ans2
-        return ans2
+    st.markdown("---")
+    # --- SP選択提案 ---
+    st.write("### SP選択の提案")
+    st.write("""
+次のターンで複数のSPレッスンが発生した場合、状況と条件を考慮してどれを踏むと最終的に条件達成確率が高くなるかを提案します。
+""")
+    i_now = st.number_input("現在の経過ターン数 (0〜7)", 0, 7, 0)
+    st.write("これまでに踏んだSP回数")
+    curr_v = st.number_input("ボーカルSP回数", 0, 7, 0)
+    curr_d = st.number_input("ダンスSP回数",   0, 7, 0)
+    curr_b = st.number_input("ビジュアルSP回数", 0, 7, 0)
 
     if st.button("判定する"):
-        prob_x = success_prob_sub(i_now+1, x_now+1)
-        prob_y = success_prob_sub(i_now+1, x_now)
-
-        st.write(f"現在 {i_now}ターン経過で、{x_label} SP {x_now}回")
-        st.write("次のターンが両方SPの場合、")
-        st.write(f"  - {x_label}を踏む => 成功確率: {prob_x*100:.3f}%")
-        st.write(f"  - {y_label}を踏む => 成功確率: {prob_y*100:.3f}%")
-
-        if prob_x > prob_y:
-            st.write(f"⇒ **{x_label} を踏むほうが成功確率が高い**です。")
-        elif prob_x < prob_y:
-            st.write(f"⇒ **{y_label} を踏む踏むほうが成功確率が高い**です。")
+        if curr_v + curr_d + curr_b > i_now:
+            st.error("経過ターン数より合計SP回数が多くなっています。")
         else:
-            st.write("⇒ **どちらを踏んでも同じ成功確率**です。")
+            dp_clear_cache()
+            pickV = dp(i_now+1, curr_v+1, curr_d, curr_b, pV, pD, pB,
+                       min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+            pickD = dp(i_now+1, curr_v, curr_d+1, curr_b, pV, pD, pB,
+                       min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+            pickB = dp(i_now+1, curr_v, curr_d, curr_b+1, pV, pD, pB,
+                       min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
 
+            def bold_if_best(name, val, best):
+                return f"**{name}**" if abs(val - best) < 1e-12 else name
+
+            # 最低条件達成確率の評価
+            minV, minD_, minB_ = pickV[0], pickD[0], pickB[0]
+            best_min = max(minV, minD_, minB_)
+            v_lbl_min = bold_if_best("ボーカル", minV, best_min)
+            d_lbl_min = bold_if_best("ダンス",   minD_, best_min)
+            b_lbl_min = bold_if_best("ビジュアル", minB_, best_min)
+
+            # 理想条件達成確率の評価
+            idealV, idealD_, idealB_ = pickV[2], pickD[2], pickB[2]
+            best_ideal = max(idealV, idealD_, idealB_)
+            v_lbl_ideal = bold_if_best("ボーカル", idealV, best_ideal)
+            d_lbl_ideal = bold_if_best("ダンス",   idealD_, best_ideal)
+            b_lbl_ideal = bold_if_best("ビジュアル", idealB_, best_ideal)
+
+            st.write("#### 次ターン各SP選択時の比較")
+            st.write("【最低条件達成確率】")
+            st.write(f"- {v_lbl_min}: {minV*100:.3f}%")
+            st.write(f"- {d_lbl_min}: {minD_*100:.3f}%")
+            st.write(f"- {b_lbl_min}: {minB_*100:.3f}%")
+
+            st.write("【理想条件達成確率】")
+            st.write(f"- {v_lbl_ideal}: {idealV*100:.3f}%")
+            st.write(f"- {d_lbl_ideal}: {idealD_*100:.3f}%")
+            st.write(f"- {b_lbl_ideal}: {idealB_*100:.3f}%")
+
+@lru_cache(None)
+def dp(i, v, d, b,
+       pV, pD, pB,
+       min_v, min_d, min_b,
+       ideal_v, ideal_d, ideal_b,
+       sum_ideal):
+    """
+    dp(i,v,d,b) の戻り値: (minC, minAndAll, idealC, allSP)
+    - iターン目(0〜8)で、既にボーカルSP=v, ダンスSP=d, ビジュアルSP=b 取得済み
+    - 残り(8-i)ターンで、最適に選択した場合の達成確率を計算
+      * minC: 最低条件達成確率 (Vo≥min_v, Da≥min_d, Vi≥min_b)
+      * minAndAll: 上記に加え、全レッスンでSP (v+d+b=8)となる確率
+      * idealC: 理想条件 (sum_ideal==8の場合、Vo==ideal_v, Da==ideal_d, Vi==ideal_b) 達成確率
+      * allSP: 全レッスンでSP (v+d+b==8) となる確率
+    """
+
+    if i == 8:
+        minCond = 1.0 if (v >= min_v and d >= min_d and b >= min_b) else 0.0
+        minAndAll = 1.0 if (minCond > 0 and (v+d+b) == 8) else 0.0
+        idealCond = 1.0 if (sum_ideal == 8 and v == ideal_v and d == ideal_d and b == ideal_b) else 0.0
+        allsp = 1.0 if (v+d+b) == 8 else 0.0
+        return (minCond, minAndAll, idealCond, allsp)
+
+    # 各確率の計算
+    p_vonly = pV * (1 - pD) * (1 - pB)
+    p_donly = (1 - pV) * pD * (1 - pB)
+    p_bonly = (1 - pV) * (1 - pD) * pB
+    p_vd    = pV * pD * (1 - pB)
+    p_vb    = pV * (1 - pD) * pB
+    p_db    = (1 - pV) * pD * pB
+    p_vdb   = pV * pD * pB
+    p_none  = 1.0 - (p_vonly + p_donly + p_bonly + p_vd + p_vb + p_db + p_vdb)
+    if p_none < 0:
+        p_none = 0.0
+
+    minC = 0.0
+    minAll = 0.0
+    idealC = 0.0
+    allsp = 0.0
+
+    # 1) none (SP無し)
+    r_none = dp(i+1, v, d, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    minC   += p_none * r_none[0]
+    minAll += p_none * r_none[1]
+    idealC += p_none * r_none[2]
+    allsp  += p_none * r_none[3]
+
+    # 2) ボーカルのみ
+    r_vonly = dp(i+1, v+1, d, b, pV, pD, pB,
+                 min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    minC   += p_vonly * r_vonly[0]
+    minAll += p_vonly * r_vonly[1]
+    idealC += p_vonly * r_vonly[2]
+    allsp  += p_vonly * r_vonly[3]
+
+    # 3) ダンスのみ
+    r_donly = dp(i+1, v, d+1, b, pV, pD, pB,
+                 min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    minC   += p_donly * r_donly[0]
+    minAll += p_donly * r_donly[1]
+    idealC += p_donly * r_donly[2]
+    allsp  += p_donly * r_donly[3]
+
+    # 4) ビジュアルのみ
+    r_bonly = dp(i+1, v, d, b+1, pV, pD, pB,
+                 min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    minC   += p_bonly * r_bonly[0]
+    minAll += p_bonly * r_bonly[1]
+    idealC += p_bonly * r_bonly[2]
+    allsp  += p_bonly * r_bonly[3]
+
+    # 5) ボーカル＋ダンス (2種SP発生：最適選択)
+    cand_v = dp(i+1, v+1, d, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    cand_d = dp(i+1, v, d+1, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    best_vd = max_tuple(cand_v, cand_d)
+    minC   += p_vd * best_vd[0]
+    minAll += p_vd * best_vd[1]
+    idealC += p_vd * best_vd[2]
+    allsp  += p_vd * best_vd[3]
+
+    # 6) ボーカル＋ビジュアル
+    cand_v = dp(i+1, v+1, d, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    cand_b = dp(i+1, v, d, b+1, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    best_vb = max_tuple(cand_v, cand_b)
+    minC   += p_vb * best_vb[0]
+    minAll += p_vb * best_vb[1]
+    idealC += p_vb * best_vb[2]
+    allsp  += p_vb * best_vb[3]
+
+    # 7) ダンス＋ビジュアル
+    cand_d = dp(i+1, v, d+1, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    cand_b = dp(i+1, v, d, b+1, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    best_db = max_tuple(cand_d, cand_b)
+    minC   += p_db * best_db[0]
+    minAll += p_db * best_db[1]
+    idealC += p_db * best_db[2]
+    allsp  += p_db * best_db[3]
+
+    # 8) 3種SP (ボーカル＋ダンス＋ビジュアル)
+    cand_v = dp(i+1, v+1, d, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    cand_d = dp(i+1, v, d+1, b, pV, pD, pB,
+                min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    cand_b_ = dp(i+1, v, d, b+1, pV, pD, pB,
+                 min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
+    best_vdb = max_tuple(cand_v, cand_d, cand_b_)
+    minC   += p_vdb * best_vdb[0]
+    minAll += p_vdb * best_vdb[1]
+    idealC += p_vdb * best_vdb[2]
+    allsp  += p_vdb * best_vdb[3]
+
+    return (minC, minAll, idealC, allsp)
+
+def max_tuple(*args):
+    # 基準は「minC + idealC + allsp」をスコアにして比較
+    def score(t): 
+        return t[0] + t[2] + t[3]
+    best = None
+    best_val = -1.0
+    for tp in args:
+        val = score(tp)
+        if val > best_val:
+            best = tp
+            best_val = val
+    return best
+
+def dp_clear_cache():
+    dp.cache_clear()
 
 if __name__ == "__main__":
     main()
