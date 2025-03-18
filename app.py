@@ -3,16 +3,6 @@ from functools import lru_cache
 
 st.set_page_config(page_title="SP発生確率計算ツール", layout="centered")
 
-# --- GitHub公開時にメニューやフッターなど不要な情報を非表示にする ---
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-# --------------------------------------------------------------
-
 def main():
     st.write("## SP発生確率計算ツール")
     st.write("""
@@ -207,7 +197,7 @@ def dp(i, v, d, b,
     idealC += p_bonly * r_bonly[2]
     allsp  += p_bonly * r_bonly[3]
 
-    # 5) ボーカル＋ダンス (2種SP発生：最適選択)
+    # 5) ボーカル＋ダンス
     cand_v = dp(i+1, v+1, d, b, pV, pD, pB,
                 min_v, min_d, min_b, ideal_v, ideal_d, ideal_b, sum_ideal)
     cand_d = dp(i+1, v, d+1, b, pV, pD, pB,
